@@ -5,11 +5,11 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>org.example</groupId>
-    <artifactId>vertex-playground</artifactId>
+    <artifactId>vertx-playground</artifactId>
     <packaging>pom</packaging>
     <version>1.0-SNAPSHOT</version>
     <modules>
-        <module>hello-vertex</module>
+        <module>hello-vertx</module>
         <module>router-vertx</module>
         <module>eventbux-vertx</module>
         <module>clustered-vertx</module>
