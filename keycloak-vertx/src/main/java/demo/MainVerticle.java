@@ -65,7 +65,8 @@ public class MainVerticle extends AbstractVerticle {
 
             router.route("/protected/*").handler(oauth2);
 
-
+            router.get("/protected/user").handler(this::handleUserPage);
+            router.get("/protected/admin").handler(this::handleAdminPage);
             router.get("/").handler(this::handleIndex);
             router.get("/protected").handler(this::handleGreet);
             router.post("/logout").handler(this::handleLogout);
@@ -73,6 +74,56 @@ public class MainVerticle extends AbstractVerticle {
 
 
         getVertx().createHttpServer().requestHandler(router).listen(port);
+    }
+
+    private void handleAdminPage(RoutingContext ctx) {
+
+        OAuth2TokenImpl user = (OAuth2TokenImpl) ctx.user();
+
+        user.isAuthorized("realm:admin", res -> {
+            // the role is "realm"
+            // the authority is "add-user"
+            if (res.succeeded() && res.result()) {
+                String username = user.idToken().getString("preferred_username");
+
+                String html = String.format("<h1>Admin Page: %s @%s</h1><a href=\"/protected\">Protected Area</a>", username, Instant.now());
+
+                ctx.request().response() //
+                        .putHeader("content-type", "text/html") //
+                        .end(html);
+
+                return;
+            }
+
+            ctx.request().response() //
+                    .putHeader("content-type", "text/html") //
+                    .setStatusCode(403)
+                    .end("<h1>Forbidden</h1>");
+        });
+    }
+
+    private void handleUserPage(RoutingContext ctx) {
+
+        OAuth2TokenImpl user = (OAuth2TokenImpl) ctx.user();
+        user.isAuthorized("realm:user", res -> {
+            // the role is "realm"
+            // the authority is "add-user"
+            if (res.succeeded() && res.result()) {
+                String username = user.idToken().getString("preferred_username");
+
+                String html = String.format("<h1>User Page: %s @%s</h1><a href=\"/protected\">Protected Area</a>", username, Instant.now());
+
+                ctx.request().response() //
+                        .putHeader("content-type", "text/html") //
+                        .end(html);
+                return;
+            }
+
+            ctx.request().response() //
+                    .putHeader("content-type", "text/html") //
+                    .setStatusCode(403)
+                    .end("<h1>Forbidden</h1>");
+        });
     }
 
     private void handleLogout(RoutingContext ctx) {
@@ -95,8 +146,12 @@ public class MainVerticle extends AbstractVerticle {
         OAuth2TokenImpl oAuth2Token = (OAuth2TokenImpl) ctx.user();
 
         String username = oAuth2Token.idToken().getString("preferred_username");
+        String displayName = oAuth2Token.idToken().getString("name");
 
-        String greeting = String.format("<h1>Hi %s @%s</h1>", username, Instant.now());
+        String greeting = String.format("<h1>Hi %s (%s) @%s</h1><ul>" +
+                "<li><a href=\"/protected/user\">User Area</a></li>" +
+                "<li><a href=\"/protected/admin\">Admin Area</a></li>" +
+                "</ul>", username, displayName, Instant.now());
 
         String logoutForm = createLogoutForm(ctx);
 
