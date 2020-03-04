@@ -92,6 +92,7 @@ public class MainVerticle extends AbstractVerticle {
 
             OAuth2TokenImpl user = (OAuth2TokenImpl) ctx.user();
 
+            // We use the userinfo endpoint as a straw man "backend" to demonstrate backend calls with bearer token
             String userInfoEndpoint = user.accessToken().getString("iss") + "/protocol/openid-connect/userinfo";
             URI userInfoEndpointUri = URI.create(userInfoEndpoint);
             webClient
