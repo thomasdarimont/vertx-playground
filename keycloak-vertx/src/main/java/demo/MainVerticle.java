@@ -1,6 +1,8 @@
 package demo;
 
 import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Handler;
+import io.vertx.core.json.JsonObject;
 import io.vertx.ext.auth.oauth2.OAuth2Auth;
 import io.vertx.ext.auth.oauth2.OAuth2ClientOptions;
 import io.vertx.ext.auth.oauth2.OAuth2FlowType;
@@ -8,6 +10,9 @@ import io.vertx.ext.auth.oauth2.impl.OAuth2TokenImpl;
 import io.vertx.ext.auth.oauth2.providers.KeycloakAuth;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
+import io.vertx.ext.web.client.HttpResponse;
+import io.vertx.ext.web.client.WebClient;
+import io.vertx.ext.web.codec.BodyCodec;
 import io.vertx.ext.web.handler.AuthHandler;
 import io.vertx.ext.web.handler.CSRFHandler;
 import io.vertx.ext.web.handler.OAuth2AuthHandler;
@@ -15,6 +20,7 @@ import io.vertx.ext.web.handler.SessionHandler;
 import io.vertx.ext.web.sstore.LocalSessionStore;
 import io.vertx.ext.web.sstore.SessionStore;
 
+import java.net.URI;
 import java.time.Instant;
 
 public class MainVerticle extends AbstractVerticle {
@@ -23,6 +29,8 @@ public class MainVerticle extends AbstractVerticle {
     public void start() {
 
         Router router = Router.router(vertx);
+
+        WebClient webClient = WebClient.create(vertx);
 
         // Store session information on the server side
         SessionStore sessionStore = LocalSessionStore.create(vertx);
@@ -67,6 +75,7 @@ public class MainVerticle extends AbstractVerticle {
 
             router.get("/protected/user").handler(this::handleUserPage);
             router.get("/protected/admin").handler(this::handleAdminPage);
+            router.get("/protected/userinfo").handler(createUserInfoHandler(webClient));
             router.get("/").handler(this::handleIndex);
             router.get("/protected").handler(this::handleGreet);
             router.post("/logout").handler(this::handleLogout);
@@ -74,6 +83,39 @@ public class MainVerticle extends AbstractVerticle {
 
 
         getVertx().createHttpServer().requestHandler(router).listen(port);
+    }
+
+    private Handler<RoutingContext> createUserInfoHandler(WebClient webClient) {
+
+        return (RoutingContext ctx) -> {
+
+            OAuth2TokenImpl user = (OAuth2TokenImpl) ctx.user();
+
+            String userInfoEndpoint = user.accessToken().getString("iss") + "/protocol/openid-connect/userinfo";
+            URI userInfoEndpointUri = URI.create(userInfoEndpoint);
+            webClient
+                    .get(userInfoEndpointUri.getPort(), userInfoEndpointUri.getHost(), userInfoEndpointUri.getPath())
+                    .bearerTokenAuthentication(user.opaqueAccessToken())
+                    .as(BodyCodec.jsonObject())
+                    .send(ar -> {
+
+                        if (ar.succeeded()) {
+                            HttpResponse<JsonObject> response = ar.result();
+
+                            JsonObject body = response.body();
+
+                            ctx.request().response() //
+                                    .putHeader("content-type", "application/json") //
+                                    .end(body.encode());
+                            return;
+                        }
+
+                        ctx.request().response() //
+                                .putHeader("content-type", "application/json") //
+                                .setStatusCode(500)
+                                .end("{}");
+                    });
+        };
     }
 
     private void handleAdminPage(RoutingContext ctx) {
@@ -151,6 +193,7 @@ public class MainVerticle extends AbstractVerticle {
         String greeting = String.format("<h1>Hi %s (%s) @%s</h1><ul>" +
                 "<li><a href=\"/protected/user\">User Area</a></li>" +
                 "<li><a href=\"/protected/admin\">Admin Area</a></li>" +
+                "<li><a href=\"/protected/userinfo\">User Info (Remote Call)</a></li>" +
                 "</ul>", username, displayName, Instant.now());
 
         String logoutForm = createLogoutForm(ctx);
