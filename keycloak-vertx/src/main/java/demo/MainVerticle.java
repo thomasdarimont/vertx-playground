@@ -30,6 +30,7 @@ public class MainVerticle extends AbstractVerticle {
 
         Router router = Router.router(vertx);
 
+        // Used for backend calls with bearer token
         WebClient webClient = WebClient.create(vertx);
 
         // Store session information on the server side
@@ -123,8 +124,7 @@ public class MainVerticle extends AbstractVerticle {
         OAuth2TokenImpl user = (OAuth2TokenImpl) ctx.user();
 
         user.isAuthorized("realm:admin", res -> {
-            // the role is "realm"
-            // the authority is "add-user"
+
             if (res.succeeded() && res.result()) {
                 String username = user.idToken().getString("preferred_username");
 
@@ -148,8 +148,7 @@ public class MainVerticle extends AbstractVerticle {
 
         OAuth2TokenImpl user = (OAuth2TokenImpl) ctx.user();
         user.isAuthorized("realm:user", res -> {
-            // the role is "realm"
-            // the authority is "add-user"
+
             if (res.succeeded() && res.result()) {
                 String username = user.idToken().getString("preferred_username");
 
