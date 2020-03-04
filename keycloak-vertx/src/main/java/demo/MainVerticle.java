@@ -9,6 +9,7 @@ import io.vertx.ext.auth.oauth2.providers.KeycloakAuth;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.AuthHandler;
+import io.vertx.ext.web.handler.CSRFHandler;
 import io.vertx.ext.web.handler.OAuth2AuthHandler;
 import io.vertx.ext.web.handler.SessionHandler;
 import io.vertx.ext.web.sstore.LocalSessionStore;
@@ -28,6 +29,16 @@ public class MainVerticle extends AbstractVerticle {
         SessionHandler sessionHandler = SessionHandler.create(sessionStore);
         router.route().handler(sessionHandler);
 
+        String csrfSecret = "zwiebelfische";
+        CSRFHandler csrfHandler = CSRFHandler.create(csrfSecret);
+        router.route().handler(ctx -> {
+                    // Ensure csrf token request parameter is available for CsrfHandler
+                    // see Handling HTML forms https://vertx.io/docs/vertx-core/java/#_handling_requests
+                    ctx.request().setExpectMultipart(true);
+                    ctx.request().endHandler(v -> csrfHandler.handle(ctx));
+                }
+        );
+
         String hostname = System.getProperty("http.host", "localhost");
         int port = Integer.getInteger("http.port", 8090);
         String baseUrl = String.format("http://%s:%d", hostname, port);
@@ -36,9 +47,9 @@ public class MainVerticle extends AbstractVerticle {
         OAuth2ClientOptions clientOptions = new OAuth2ClientOptions()
                 .setFlow(OAuth2FlowType.AUTH_CODE)
                 // Issuer URL
-                .setSite("http://localhost:8080/auth/realms/vertx")
-                .setClientID("demo-client")
-                .setClientSecret("1f88bd14-7e7f-45e7-be27-d680da6e48d8");
+                .setSite(System.getProperty("oauth2.issuer", "http://localhost:8080/auth/realms/vertx"))
+                .setClientID(System.getProperty("oauth2.client_id", "demo-client"))
+                .setClientSecret(System.getProperty("oauth2.client_secret", "1f88bd14-7e7f-45e7-be27-d680da6e48d8"));
 
         KeycloakAuth.discover(vertx, clientOptions, asyncResult -> {
 
@@ -54,12 +65,29 @@ public class MainVerticle extends AbstractVerticle {
 
             router.route("/protected/*").handler(oauth2);
 
+
             router.get("/").handler(this::handleIndex);
             router.get("/protected").handler(this::handleGreet);
+            router.post("/logout").handler(this::handleLogout);
         });
 
 
         getVertx().createHttpServer().requestHandler(router).listen(port);
+    }
+
+    private void handleLogout(RoutingContext ctx) {
+
+        OAuth2TokenImpl oAuth2Token = (OAuth2TokenImpl) ctx.user();
+        oAuth2Token.logout(res -> {
+            if (res.succeeded()) {
+                ctx.session().destroy();
+                ctx.response().putHeader("location", "/?logout=true").setStatusCode(302).end();
+            } else {
+                // the user might not have been logged out
+                // to know why:
+                ctx.request().response().end(String.format("Logout failed %s", res.cause()));
+            }
+        });
     }
 
     private void handleGreet(RoutingContext ctx) {
@@ -68,7 +96,22 @@ public class MainVerticle extends AbstractVerticle {
 
         String username = oAuth2Token.idToken().getString("preferred_username");
 
-        ctx.request().response().end(String.format("Hi %s @%S", username, Instant.now()));
+        String greeting = String.format("<h1>Hi %s @%s</h1>", username, Instant.now());
+
+        String logoutForm = createLogoutForm(ctx);
+
+        ctx.request().response() //
+                .putHeader("content-type", "text/html") //
+                .end(greeting + logoutForm);
+    }
+
+    private String createLogoutForm(RoutingContext ctx) {
+
+        String csrfToken = ctx.get(CSRFHandler.DEFAULT_HEADER_NAME);
+
+        return "<form action=\"/logout\" method=\"post\">"
+                + String.format("<input type=\"hidden\" name=\"%s\" value=\"%s\"></input>", CSRFHandler.DEFAULT_HEADER_NAME, csrfToken)
+                + "<button>Logout</button></form>";
     }
 
     private void handleIndex(RoutingContext ctx) {
