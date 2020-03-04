@@ -9,6 +9,13 @@ In my demo I created a user `tester` with password `test`.
 
 Note: This example assumes Keycloak to be accessible via `http://localhost:8080/auth`.
 
+# Features
+The following features are demonstrated:  
+- Login via OpenID Connect Authorization Code Flow Grant
+- Logout with CSRF Token protection
+- RBAC with Keycloak Realm roles
+- Remote-Calls with Bearer token
+
 # Build
 ```
 mvn clean package
