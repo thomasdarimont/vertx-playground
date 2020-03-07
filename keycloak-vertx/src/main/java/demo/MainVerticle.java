@@ -67,6 +67,10 @@ public class MainVerticle extends AbstractVerticle {
 
             OAuth2Auth oauth2Auth = asyncResult.result();
 
+            if (oauth2Auth == null) {
+                throw new RuntimeException("Could not configure Keycloak integration via OpenID Connect Discovery Endpoint. Is Keycloak running?");
+            }
+
             AuthHandler oauth2 = OAuth2AuthHandler.create(oauth2Auth, baseUrl + oauthCallbackPath) //
                     .setupCallback(router.get(oauthCallbackPath)) //
                     // Additional scopes: openid for OpenID Connect
@@ -79,21 +83,26 @@ public class MainVerticle extends AbstractVerticle {
             router.route("/protected/*").handler(oauth2);
 
             // configure route handlers
-            router.get("/").handler(this::handleIndex);
-
-            router.get("/protected").handler(this::handleGreet);
-            router.get("/protected/user").handler(this::handleUserPage);
-            router.get("/protected/admin").handler(this::handleAdminPage);
-
-            // extract discovered userinfo endpoint url
-            String userInfoUrl = ((OAuth2AuthProviderImpl) oauth2Auth).getConfig().getUserInfoPath();
-            router.get("/protected/userinfo").handler(createUserInfoHandler(webClient, userInfoUrl));
-
-            router.post("/logout").handler(this::handleLogout);
+            configureRoutes(router, webClient, (OAuth2AuthProviderImpl) oauth2Auth);
         });
 
 
         getVertx().createHttpServer().requestHandler(router).listen(port);
+    }
+
+    private void configureRoutes(Router router, WebClient webClient, OAuth2AuthProviderImpl oauth2Auth) {
+
+        router.get("/").handler(this::handleIndex);
+
+        router.get("/protected").handler(this::handleGreet);
+        router.get("/protected/user").handler(this::handleUserPage);
+        router.get("/protected/admin").handler(this::handleAdminPage);
+
+        // extract discovered userinfo endpoint url
+        String userInfoUrl = oauth2Auth.getConfig().getUserInfoPath();
+        router.get("/protected/userinfo").handler(createUserInfoHandler(webClient, userInfoUrl));
+
+        router.post("/logout").handler(this::handleLogout);
     }
 
     private void handleIndex(RoutingContext ctx) {
