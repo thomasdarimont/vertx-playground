@@ -83,14 +83,14 @@ public class MainVerticle extends AbstractVerticle {
             router.route("/protected/*").handler(oauth2);
 
             // configure route handlers
-            configureRoutes(router, webClient, (OAuth2AuthProviderImpl) oauth2Auth);
+            configureRoutes(router, webClient, oauth2Auth);
         });
 
 
         getVertx().createHttpServer().requestHandler(router).listen(port);
     }
 
-    private void configureRoutes(Router router, WebClient webClient, OAuth2AuthProviderImpl oauth2Auth) {
+    private void configureRoutes(Router router, WebClient webClient, OAuth2Auth oauth2Auth) {
 
         router.get("/").handler(this::handleIndex);
 
@@ -99,7 +99,7 @@ public class MainVerticle extends AbstractVerticle {
         router.get("/protected/admin").handler(this::handleAdminPage);
 
         // extract discovered userinfo endpoint url
-        String userInfoUrl = oauth2Auth.getConfig().getUserInfoPath();
+        String userInfoUrl = ((OAuth2AuthProviderImpl) oauth2Auth).getConfig().getUserInfoPath();
         router.get("/protected/userinfo").handler(createUserInfoHandler(webClient, userInfoUrl));
 
         router.post("/logout").handler(this::handleLogout);
@@ -113,20 +113,11 @@ public class MainVerticle extends AbstractVerticle {
 
         OAuth2TokenImpl user = (OAuth2TokenImpl) ctx.user();
 
-        // check for realm-role "user"
-        user.isAuthorized("realm:user", res -> {
+        // extract username from IDToken, there are many more claims like (email, givenanme, familyname etc.) available
+        String username = user.idToken().getString("preferred_username");
 
-            if (!res.succeeded() || !res.result()) {
-                respondWith(ctx, 403, "text/html", "<h1>Forbidden</h1>");
-                return;
-            }
-
-            // extract username from IDToken, there are many more claims like (email, givenanme, familyname etc.) available
-            String username = user.idToken().getString("preferred_username");
-
-            String content = String.format("<h1>User Page: %s @%s</h1><a href=\"/protected\">Protected Area</a>", username, Instant.now());
-            respondWithOk(ctx, "text/html", content);
-        });
+        String content = String.format("<h1>User Page: %s @%s</h1><a href=\"/protected\">Protected Area</a>", username, Instant.now());
+        respondWithOk(ctx, "text/html", content);
     }
 
     private void handleAdminPage(RoutingContext ctx) {
