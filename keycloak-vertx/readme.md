@@ -18,7 +18,9 @@ The following features are demonstrated:
 
 # Prepare
 
-## Start Keycloak and import the vertx-realm
+## Start Keycloak with the vertx Realm
+You can start a new Keycloak docker container with the prepared vertx realm by running the following command: 
+```
 docker run \
   -it \
   --name vertx-keycloak \
@@ -29,18 +31,12 @@ docker run \
   -v $PWD/vertx-realm.json:/tmp/vertx-realm.json \
   -p 8080:8080 \
   quay.io/keycloak/keycloak:9.0.0
+```
 
-## Users
-The following users are available within Keycloak
-
-master - Admin user
-- admin:admin
-
-vertx - User with role `user`
-- tester:test
-
-vertx - User with roles `user, admin`
-- vadmin:test
+Keycloak contains the following predefined users:  
+- Master Realm Admin `admin:admin` user.
+- Vertx Realm User `tester:test` with role `user`.
+- Vertx Realm User `vadmin:test` with roles `user, admin`. 
 
 # Build
 ```
