@@ -54,18 +54,18 @@ public class MainVerticle extends AbstractVerticle {
         String baseUrl = String.format("http://%s:%d", hostname, port);
         String oauthCallbackPath = "/callback";
 
+        // Our app is registered as a confidential OpenID Connect client with Authorization Code Flow in Keycloak,
+        // thus we need to configure client_id and client_secret
         OAuth2ClientOptions clientOptions = new OAuth2ClientOptions()
                 .setFlow(OAuth2FlowType.AUTH_CODE)
                 .setSite(System.getProperty("oauth2.issuer", "http://localhost:8080/auth/realms/vertx"))
                 .setClientID(System.getProperty("oauth2.client_id", "demo-client"))
                 .setClientSecret(System.getProperty("oauth2.client_secret", "1f88bd14-7e7f-45e7-be27-d680da6e48d8"));
 
+        // We use Keycloaks OpenID Connect discovery endpoint to infer the Oauth2 / OpenID Connect endpoint URLs
         KeycloakAuth.discover(vertx, clientOptions, asyncResult -> {
 
             OAuth2Auth oauth2Auth = asyncResult.result();
-
-            // extract discovered userinfo endpoint url
-            String userInfoUrl = ((OAuth2AuthProviderImpl) oauth2Auth).getConfig().getUserInfoPath();
 
             AuthHandler oauth2 = OAuth2AuthHandler.create(oauth2Auth, baseUrl + oauthCallbackPath) //
                     .setupCallback(router.get(oauthCallbackPath)) //
@@ -84,6 +84,9 @@ public class MainVerticle extends AbstractVerticle {
             router.get("/protected").handler(this::handleGreet);
             router.get("/protected/user").handler(this::handleUserPage);
             router.get("/protected/admin").handler(this::handleAdminPage);
+
+            // extract discovered userinfo endpoint url
+            String userInfoUrl = ((OAuth2AuthProviderImpl) oauth2Auth).getConfig().getUserInfoPath();
             router.get("/protected/userinfo").handler(createUserInfoHandler(webClient, userInfoUrl));
 
             router.post("/logout").handler(this::handleLogout);
@@ -93,35 +96,35 @@ public class MainVerticle extends AbstractVerticle {
         getVertx().createHttpServer().requestHandler(router).listen(port);
     }
 
-    private Handler<RoutingContext> createUserInfoHandler(WebClient webClient, String userInfoUrl) {
+    private void handleIndex(RoutingContext ctx) {
+        respondWithOk(ctx, "text/html", "<h1>Welcome to Vert.x Keycloak Example</h1><br><a href=\"/protected\">Protected</a>");
+    }
 
-        return (RoutingContext ctx) -> {
+    private void handleUserPage(RoutingContext ctx) {
 
-            OAuth2TokenImpl user = (OAuth2TokenImpl) ctx.user();
+        OAuth2TokenImpl user = (OAuth2TokenImpl) ctx.user();
 
-            // We use the userinfo endpoint as a straw man "backend" to demonstrate backend calls with bearer token
-            URI userInfoEndpointUri = URI.create(userInfoUrl);
-            webClient
-                    .get(userInfoEndpointUri.getPort(), userInfoEndpointUri.getHost(), userInfoEndpointUri.getPath())
-                    .bearerTokenAuthentication(user.opaqueAccessToken())
-                    .as(BodyCodec.jsonObject())
-                    .send(ar -> {
+        // check for realm-role "user"
+        user.isAuthorized("realm:user", res -> {
 
-                        if (!ar.succeeded()) {
-                            respondWith(ctx, 500, "application/json", "{}");
-                            return;
-                        }
+            if (!res.succeeded() || !res.result()) {
+                respondWith(ctx, 403, "text/html", "<h1>Forbidden</h1>");
+                return;
+            }
 
-                        JsonObject body = ar.result().body();
-                        respondWithOk(ctx, "application/json", body.encode());
-                    });
-        };
+            // extract username from IDToken, there are many more claims like (email, givenanme, familyname etc.) available
+            String username = user.idToken().getString("preferred_username");
+
+            String content = String.format("<h1>User Page: %s @%s</h1><a href=\"/protected\">Protected Area</a>", username, Instant.now());
+            respondWithOk(ctx, "text/html", content);
+        });
     }
 
     private void handleAdminPage(RoutingContext ctx) {
 
         OAuth2TokenImpl user = (OAuth2TokenImpl) ctx.user();
 
+        // check for realm-role "admin"
         user.isAuthorized("realm:admin", res -> {
 
             if (!res.succeeded() || !res.result()) {
@@ -136,21 +139,30 @@ public class MainVerticle extends AbstractVerticle {
         });
     }
 
-    private void handleUserPage(RoutingContext ctx) {
+    private Handler<RoutingContext> createUserInfoHandler(WebClient webClient, String userInfoUrl) {
 
-        OAuth2TokenImpl user = (OAuth2TokenImpl) ctx.user();
-        user.isAuthorized("realm:user", res -> {
+        return (RoutingContext ctx) -> {
 
-            if (!res.succeeded() || !res.result()) {
-                respondWith(ctx, 403, "text/html", "<h1>Forbidden</h1>");
-                return;
-            }
+            OAuth2TokenImpl user = (OAuth2TokenImpl) ctx.user();
 
-            String username = user.idToken().getString("preferred_username");
+            // We use the userinfo endpoint as a straw man "backend" to demonstrate backend calls with bearer token
+            URI userInfoEndpointUri = URI.create(userInfoUrl);
+            webClient
+                    .get(userInfoEndpointUri.getPort(), userInfoEndpointUri.getHost(), userInfoEndpointUri.getPath())
+                    // use the access token for calls to other services protected via JWT Bearer authentication
+                    .bearerTokenAuthentication(user.opaqueAccessToken())
+                    .as(BodyCodec.jsonObject())
+                    .send(ar -> {
 
-            String content = String.format("<h1>User Page: %s @%s</h1><a href=\"/protected\">Protected Area</a>", username, Instant.now());
-            respondWithOk(ctx, "text/html", content);
-        });
+                        if (!ar.succeeded()) {
+                            respondWith(ctx, 500, "application/json", "{}");
+                            return;
+                        }
+
+                        JsonObject body = ar.result().body();
+                        respondWithOk(ctx, "application/json", body.encode());
+                    });
+        };
     }
 
     private void handleLogout(RoutingContext ctx) {
@@ -194,10 +206,6 @@ public class MainVerticle extends AbstractVerticle {
         return "<form action=\"/logout\" method=\"post\">"
                 + String.format("<input type=\"hidden\" name=\"%s\" value=\"%s\">", CSRFHandler.DEFAULT_HEADER_NAME, csrfToken)
                 + "<button>Logout</button></form>";
-    }
-
-    private void handleIndex(RoutingContext ctx) {
-        respondWithOk(ctx, "text/html", "<h1>Welcome to Vert.x Keycloak Example</h1><br><a href=\"/protected\">Protected</a>");
     }
 
     private void respondWithOk(RoutingContext ctx, String contentType, String content) {
