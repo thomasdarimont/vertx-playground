@@ -6,11 +6,11 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.ext.auth.oauth2.OAuth2Auth;
 import io.vertx.ext.auth.oauth2.OAuth2ClientOptions;
 import io.vertx.ext.auth.oauth2.OAuth2FlowType;
+import io.vertx.ext.auth.oauth2.impl.OAuth2AuthProviderImpl;
 import io.vertx.ext.auth.oauth2.impl.OAuth2TokenImpl;
 import io.vertx.ext.auth.oauth2.providers.KeycloakAuth;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
-import io.vertx.ext.web.client.HttpResponse;
 import io.vertx.ext.web.client.WebClient;
 import io.vertx.ext.web.codec.BodyCodec;
 import io.vertx.ext.web.handler.AuthHandler;
@@ -30,14 +30,12 @@ public class MainVerticle extends AbstractVerticle {
 
         Router router = Router.router(vertx);
 
-        // Used for backend calls with bearer token
-        WebClient webClient = WebClient.create(vertx);
-
         // Store session information on the server side
         SessionStore sessionStore = LocalSessionStore.create(vertx);
         SessionHandler sessionHandler = SessionHandler.create(sessionStore);
         router.route().handler(sessionHandler);
 
+        // CSRF handler setup required for logout form
         String csrfSecret = "zwiebelfische";
         CSRFHandler csrfHandler = CSRFHandler.create(csrfSecret);
         router.route().handler(ctx -> {
@@ -48,6 +46,9 @@ public class MainVerticle extends AbstractVerticle {
                 }
         );
 
+        // Used for backend calls with bearer token
+        WebClient webClient = WebClient.create(vertx);
+
         String hostname = System.getProperty("http.host", "localhost");
         int port = Integer.getInteger("http.port", 8090);
         String baseUrl = String.format("http://%s:%d", hostname, port);
@@ -55,7 +56,6 @@ public class MainVerticle extends AbstractVerticle {
 
         OAuth2ClientOptions clientOptions = new OAuth2ClientOptions()
                 .setFlow(OAuth2FlowType.AUTH_CODE)
-                // Issuer URL
                 .setSite(System.getProperty("oauth2.issuer", "http://localhost:8080/auth/realms/vertx"))
                 .setClientID(System.getProperty("oauth2.client_id", "demo-client"))
                 .setClientSecret(System.getProperty("oauth2.client_secret", "1f88bd14-7e7f-45e7-be27-d680da6e48d8"));
@@ -64,21 +64,28 @@ public class MainVerticle extends AbstractVerticle {
 
             OAuth2Auth oauth2Auth = asyncResult.result();
 
+            // extract discovered userinfo endpoint url
+            String userInfoUrl = ((OAuth2AuthProviderImpl) oauth2Auth).getConfig().getUserInfoPath();
+
             AuthHandler oauth2 = OAuth2AuthHandler.create(oauth2Auth, baseUrl + oauthCallbackPath) //
                     .setupCallback(router.get(oauthCallbackPath)) //
-                    // Additional scopes
+                    // Additional scopes: openid for OpenID Connect
                     .addAuthority("openid");
 
             // session handler needs access to the authenticated user, otherwise we get an infinite redirect loop
             sessionHandler.setAuthProvider(oauth2Auth);
 
+            // protect resources beneath /protected/* with oauth2 handler
             router.route("/protected/*").handler(oauth2);
 
+            // configure route handlers
+            router.get("/").handler(this::handleIndex);
+
+            router.get("/protected").handler(this::handleGreet);
             router.get("/protected/user").handler(this::handleUserPage);
             router.get("/protected/admin").handler(this::handleAdminPage);
-            router.get("/protected/userinfo").handler(createUserInfoHandler(webClient));
-            router.get("/").handler(this::handleIndex);
-            router.get("/protected").handler(this::handleGreet);
+            router.get("/protected/userinfo").handler(createUserInfoHandler(webClient, userInfoUrl));
+
             router.post("/logout").handler(this::handleLogout);
         });
 
@@ -86,36 +93,27 @@ public class MainVerticle extends AbstractVerticle {
         getVertx().createHttpServer().requestHandler(router).listen(port);
     }
 
-    private Handler<RoutingContext> createUserInfoHandler(WebClient webClient) {
+    private Handler<RoutingContext> createUserInfoHandler(WebClient webClient, String userInfoUrl) {
 
         return (RoutingContext ctx) -> {
 
             OAuth2TokenImpl user = (OAuth2TokenImpl) ctx.user();
 
             // We use the userinfo endpoint as a straw man "backend" to demonstrate backend calls with bearer token
-            String userInfoEndpoint = user.accessToken().getString("iss") + "/protocol/openid-connect/userinfo";
-            URI userInfoEndpointUri = URI.create(userInfoEndpoint);
+            URI userInfoEndpointUri = URI.create(userInfoUrl);
             webClient
                     .get(userInfoEndpointUri.getPort(), userInfoEndpointUri.getHost(), userInfoEndpointUri.getPath())
                     .bearerTokenAuthentication(user.opaqueAccessToken())
                     .as(BodyCodec.jsonObject())
                     .send(ar -> {
 
-                        if (ar.succeeded()) {
-                            HttpResponse<JsonObject> response = ar.result();
-
-                            JsonObject body = response.body();
-
-                            ctx.request().response() //
-                                    .putHeader("content-type", "application/json") //
-                                    .end(body.encode());
+                        if (!ar.succeeded()) {
+                            respondWith(ctx, 500, "application/json", "{}");
                             return;
                         }
 
-                        ctx.request().response() //
-                                .putHeader("content-type", "application/json") //
-                                .setStatusCode(500)
-                                .end("{}");
+                        JsonObject body = ar.result().body();
+                        respondWithOk(ctx, "application/json", body.encode());
                     });
         };
     }
@@ -126,22 +124,15 @@ public class MainVerticle extends AbstractVerticle {
 
         user.isAuthorized("realm:admin", res -> {
 
-            if (res.succeeded() && res.result()) {
-                String username = user.idToken().getString("preferred_username");
-
-                String html = String.format("<h1>Admin Page: %s @%s</h1><a href=\"/protected\">Protected Area</a>", username, Instant.now());
-
-                ctx.request().response() //
-                        .putHeader("content-type", "text/html") //
-                        .end(html);
-
+            if (!res.succeeded() || !res.result()) {
+                respondWith(ctx, 403, "text/html", "<h1>Forbidden</h1>");
                 return;
             }
 
-            ctx.request().response() //
-                    .putHeader("content-type", "text/html") //
-                    .setStatusCode(403)
-                    .end("<h1>Forbidden</h1>");
+            String username = user.idToken().getString("preferred_username");
+
+            String content = String.format("<h1>Admin Page: %s @%s</h1><a href=\"/protected\">Protected Area</a>", username, Instant.now());
+            respondWithOk(ctx, "text/html", content);
         });
     }
 
@@ -150,21 +141,15 @@ public class MainVerticle extends AbstractVerticle {
         OAuth2TokenImpl user = (OAuth2TokenImpl) ctx.user();
         user.isAuthorized("realm:user", res -> {
 
-            if (res.succeeded() && res.result()) {
-                String username = user.idToken().getString("preferred_username");
-
-                String html = String.format("<h1>User Page: %s @%s</h1><a href=\"/protected\">Protected Area</a>", username, Instant.now());
-
-                ctx.request().response() //
-                        .putHeader("content-type", "text/html") //
-                        .end(html);
+            if (!res.succeeded() || !res.result()) {
+                respondWith(ctx, 403, "text/html", "<h1>Forbidden</h1>");
                 return;
             }
 
-            ctx.request().response() //
-                    .putHeader("content-type", "text/html") //
-                    .setStatusCode(403)
-                    .end("<h1>Forbidden</h1>");
+            String username = user.idToken().getString("preferred_username");
+
+            String content = String.format("<h1>User Page: %s @%s</h1><a href=\"/protected\">Protected Area</a>", username, Instant.now());
+            respondWithOk(ctx, "text/html", content);
         });
     }
 
@@ -172,14 +157,15 @@ public class MainVerticle extends AbstractVerticle {
 
         OAuth2TokenImpl oAuth2Token = (OAuth2TokenImpl) ctx.user();
         oAuth2Token.logout(res -> {
-            if (res.succeeded()) {
-                ctx.session().destroy();
-                ctx.response().putHeader("location", "/?logout=true").setStatusCode(302).end();
-            } else {
-                // the user might not have been logged out
-                // to know why:
-                ctx.request().response().end(String.format("Logout failed %s", res.cause()));
+
+            if (!res.succeeded()) {
+                // the user might not have been logged out, to know why:
+                respondWith(ctx, 500, "text/html", String.format("<h1>Logout failed %s</h1>", res.cause()));
+                return;
             }
+
+            ctx.session().destroy();
+            ctx.response().putHeader("location", "/?logout=true").setStatusCode(302).end();
         });
     }
 
@@ -198,9 +184,7 @@ public class MainVerticle extends AbstractVerticle {
 
         String logoutForm = createLogoutForm(ctx);
 
-        ctx.request().response() //
-                .putHeader("content-type", "text/html") //
-                .end(greeting + logoutForm);
+        respondWithOk(ctx, "text/html", greeting + logoutForm);
     }
 
     private String createLogoutForm(RoutingContext ctx) {
@@ -208,13 +192,22 @@ public class MainVerticle extends AbstractVerticle {
         String csrfToken = ctx.get(CSRFHandler.DEFAULT_HEADER_NAME);
 
         return "<form action=\"/logout\" method=\"post\">"
-                + String.format("<input type=\"hidden\" name=\"%s\" value=\"%s\"></input>", CSRFHandler.DEFAULT_HEADER_NAME, csrfToken)
+                + String.format("<input type=\"hidden\" name=\"%s\" value=\"%s\">", CSRFHandler.DEFAULT_HEADER_NAME, csrfToken)
                 + "<button>Logout</button></form>";
     }
 
     private void handleIndex(RoutingContext ctx) {
+        respondWithOk(ctx, "text/html", "<h1>Welcome to Vert.x Keycloak Example</h1><br><a href=\"/protected\">Protected</a>");
+    }
+
+    private void respondWithOk(RoutingContext ctx, String contentType, String content) {
+        respondWith(ctx, 200, contentType, content);
+    }
+
+    private void respondWith(RoutingContext ctx, int statusCode, String contentType, String content) {
         ctx.request().response() //
-                .putHeader("content-type", "text/html") //
-                .end("<h1>Welcome to Vertex Keycloak Example</h1><br><a href=\"/protected\">Protected</a>");
+                .putHeader("content-type", contentType) //
+                .setStatusCode(statusCode)
+                .end(content);
     }
 }
