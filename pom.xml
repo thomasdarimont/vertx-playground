@@ -15,6 +15,7 @@
         <module>clustered-vertx</module>
         <module>keycloak-vertx</module>
         <module>config-stores-vertx</module>
+        <module>static-handler-vertx</module>
     </modules>
 
     <properties>
