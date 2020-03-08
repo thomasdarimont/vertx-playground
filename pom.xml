@@ -14,6 +14,7 @@
         <module>eventbux-vertx</module>
         <module>clustered-vertx</module>
         <module>keycloak-vertx</module>
+        <module>config-stores-vertx</module>
     </modules>
 
     <properties>
