@@ -12,5 +12,4 @@ public class MainVerticle extends AbstractVerticle {
             req.response().end("Hi Vertex "  + Instant.now());
         }).listen(8080);
     }
-
 }

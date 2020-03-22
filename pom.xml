@@ -16,6 +16,7 @@
         <module>keycloak-vertx</module>
         <module>config-stores-vertx</module>
         <module>static-handler-vertx</module>
+        <module>jwt-service-vertx</module>
     </modules>
 
     <properties>
