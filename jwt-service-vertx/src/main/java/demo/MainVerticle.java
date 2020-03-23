@@ -1,11 +1,14 @@
 package demo;
 
+import io.netty.handler.codec.http.HttpHeaderValues;
 import io.vertx.config.ConfigRetriever;
 import io.vertx.config.ConfigRetrieverOptions;
 import io.vertx.config.ConfigStoreOptions;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
+import io.vertx.core.http.HttpHeaders;
+import io.vertx.core.http.HttpServerResponse;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
@@ -55,13 +58,15 @@ public class MainVerticle extends AbstractVerticle {
                 .compose(this::setupJwtAuth)
                 .compose(this::setupRouter)
                 .compose(this::setupRoutes)
-                .compose(this::startVertxServer)
+                .compose(this::startServer)
                 .setHandler(bootstrap);
     }
 
-    Future<Void> startVertxServer(Startup startup) {
+    Future<Void> startServer(Startup startup) {
 
-        int port = startup.config.getJsonObject("http").getInteger("port", 3000);
+        var httpConfig = startup.config.getJsonObject("http");
+
+        var port = httpConfig.getInteger("port", 3000);
         vertx.createHttpServer().requestHandler(router).listen(port);
 
         LOG.info("Vertx JWT-Service started!");
@@ -82,29 +87,28 @@ public class MainVerticle extends AbstractVerticle {
 
         router = Router.router(vertx);
 
-        var jwtAuthHandler = JWTAuthHandler.create(jwtAuth);
-        router.route("/api/*").handler(rc -> {
-            jwtAuthHandler.handle(rc);
-        });
+        router.route("/api/*").handler(JWTAuthHandler.create(jwtAuth));
 
         return Promise.succeededPromise(startup).future();
     }
 
     private Future<Startup> setupJwtAuth(Startup startup) {
 
-        var issuer = startup.config.getJsonObject("jwt").getString("issuer");
+        var jwtConfig = startup.config.getJsonObject("jwt");
+        var issuer = jwtConfig.getString("issuer");
         var issuerUri = URI.create(issuer);
 
-        var jwksPath = issuerUri.getPath() + "/protocol/openid-connect/certs";
+        var jwksUri = URI.create(jwtConfig.getString("jwksUri", String.format("%s://%s:%d%s",
+                issuerUri.getScheme(), issuerUri.getHost(), issuerUri.getPort(), issuerUri.getPath() + "/protocol/openid-connect/certs")));
 
         var promise = Promise.<JWTAuth>promise();
 
-        webClient.get(issuerUri.getPort(), issuerUri.getHost(), jwksPath)
+        webClient.get(jwksUri.getPort(), jwksUri.getHost(), jwksUri.getPath())
                 .as(BodyCodec.jsonObject())
                 .send(ar -> {
 
                     if (!ar.succeeded()) {
-                        startup.bootstrap.fail(String.format("Could not fetch JWKS from %s", jwksPath));
+                        startup.bootstrap.fail(String.format("Could not fetch JWKS from URI: %s", jwksUri));
                         return;
                     }
 
@@ -113,19 +117,19 @@ public class MainVerticle extends AbstractVerticle {
                     var jwksResponse = response.body();
                     var keys = jwksResponse.getJsonArray("keys");
 
-                    var jwtAuthOptions = new JWTAuthOptions();
                     var jwtOptions = new JWTOptions();
                     jwtOptions.setIssuer(issuer);
 
-                    jwtAuthOptions.setJWTOptions(jwtOptions);
                     var jwks = ((List<Object>) keys.getList()).stream()
                             .map(o -> new JsonObject((Map<String, Object>) o))
                             .collect(Collectors.toList());
-                    jwtAuthOptions.setJwks(jwks);
-                    jwtAuthOptions.setPermissionsClaimKey("realm_access/roles");
 
-                    var jwtAuth = JWTAuth.create(vertx, jwtAuthOptions);
-                    promise.complete(jwtAuth);
+                    var jwtAuthOptions = new JWTAuthOptions();
+                    jwtAuthOptions.setJwks(jwks);
+                    jwtAuthOptions.setJWTOptions(jwtOptions);
+                    jwtAuthOptions.setPermissionsClaimKey(jwtConfig.getString("permissionClaimsKey", "realm_access/roles"));
+
+                    promise.complete(JWTAuth.create(vertx, jwtAuthOptions));
                 });
 
         return promise.future().compose(auth -> {
@@ -163,6 +167,9 @@ public class MainVerticle extends AbstractVerticle {
         var username = jwtUser.principal().getString("preferred_username");
         var userId = jwtUser.principal().getString("sub");
 
+        var accessToken = ctx.request().getHeader(HttpHeaders.AUTHORIZATION).substring("Bearer ".length());
+        // Use accessToken for down-stream calls...
+
         ctx.request().response().end(String.format("Hi %s (%s) %s", username, userId, Instant.now()));
     }
 
@@ -175,11 +182,11 @@ public class MainVerticle extends AbstractVerticle {
         jwtUser.isAuthorized("user", res -> {
 
             if (!res.succeeded() || !res.result()) {
-                ctx.request().response().putHeader("content-type", "application/json").setStatusCode(403).end("{\"error\": \"forbidden\"}");
+                toJsonResponse(ctx).setStatusCode(403).end("{\"error\": \"forbidden\"}");
                 return;
             }
 
-            ctx.request().response().putHeader("content-type", "application/json").end(String.format("{data: \"User data %s (%s) %s\"}", username, userId, Instant.now()));
+            toJsonResponse(ctx).end(String.format("{data: \"User data %s (%s) %s\"}", username, userId, Instant.now()));
         });
     }
 
@@ -192,11 +199,16 @@ public class MainVerticle extends AbstractVerticle {
         jwtUser.isAuthorized("admin", res -> {
 
             if (!res.succeeded() || !res.result()) {
-                ctx.request().response().putHeader("content-type", "application/json").setStatusCode(403).end("{\"error\": \"forbidden\"}");
+                toJsonResponse(ctx).setStatusCode(403).end("{\"error\": \"forbidden\"}");
                 return;
             }
 
-            ctx.request().response().putHeader("content-type", "application/json").end(String.format("{data: \"Admin data %s (%s) %s\"}", username, userId, Instant.now()));
+            toJsonResponse(ctx).end(String.format("{data: \"Admin data %s (%s) %s\"}", username, userId, Instant.now()));
         });
+    }
+
+
+    private HttpServerResponse toJsonResponse(RoutingContext ctx) {
+        return ctx.request().response().putHeader(HttpHeaders.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
     }
 }
