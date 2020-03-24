@@ -1,3 +1,9 @@
+!keycloak-vertx/data/.gitkeep
+keycloak-vertx/data/
+
+!jwt-service-vertx/data/.gitkeep
+jwt-service-vertx/data/
+
 ### Maven ###
 target/
 pom.xml.tag

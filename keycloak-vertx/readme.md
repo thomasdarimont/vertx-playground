@@ -29,8 +29,9 @@ docker run \
   -e KEYCLOAK_PASSWORD=admin \
   -e KEYCLOAK_IMPORT=/tmp/vertx-realm.json \
   -v $PWD/vertx-realm.json:/tmp/vertx-realm.json \
+  -v $PWD/data:/opt/jboss/keycloak/standalone/data \
   -p 8080:8080 \
-  quay.io/keycloak/keycloak:9.0.0
+  quay.io/keycloak/keycloak:9.0.2
 ```
 
 Keycloak contains the following predefined users:  
