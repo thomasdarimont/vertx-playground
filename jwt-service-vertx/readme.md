@@ -1,10 +1,19 @@
 Demo for Vert.x JWT Auth with Keycloak
 ---
 
-PoC for securing a Vert.x Service with JWT Bearer token Authentication.  
+PoC for securing a Vert.x Service with JWT Bearer Token Authentication.  
 
 An example realm `vertx` with a `vertx-service` client configuration can be found in the `vertx-realm.json`.
-In my demo I created a user `tester` with password `test` and an admin user `vadmin` also with password `test`.  
+In my demo I created a user `tester` with password `test` and an admin user `vadmin` also with password `test`. 
+
+This example uses Vert.x's `vertx-auth-jwt` support.
+```
+<dependency>
+    <groupId>io.vertx</groupId>
+    <artifactId>vertx-auth-jwt</artifactId>
+</dependency>
+```
+We obtain the necessary public key information from Keycloak's  JSON Web Key Set (JWKS) endpoint.
 
 Note: This example assumes Keycloak to be accessible via `http://localhost:8080/auth`.
 
@@ -16,7 +25,7 @@ The following features are demonstrated:
 
 # Prepare
 
-## Start Keycloak with the vertx Realm
+## Start Keycloak with the `vertx` Realm
 You can start a new Keycloak docker container with the prepared vertx realm by running the following command: 
 ```
 docker run \
