@@ -92,11 +92,13 @@ public class MainVerticle extends AbstractVerticle {
         var issuer = jwtConfig.getString("issuer");
         var issuerUri = URI.create(issuer);
 
+        // derive JWKS uri from Keycloak issuer URI
         var jwksUri = URI.create(jwtConfig.getString("jwksUri", String.format("%s://%s:%d%s",
                 issuerUri.getScheme(), issuerUri.getHost(), issuerUri.getPort(), issuerUri.getPath() + "/protocol/openid-connect/certs")));
 
         var promise = Promise.<JWTAuth>promise();
 
+        // fetch JWKS from `/certs` endpoint
         webClient.get(jwksUri.getPort(), jwksUri.getHost(), jwksUri.getPath())
                 .as(BodyCodec.jsonObject())
                 .send(ar -> {
@@ -111,19 +113,23 @@ public class MainVerticle extends AbstractVerticle {
                     var jwksResponse = response.body();
                     var keys = jwksResponse.getJsonArray("keys");
 
+                    // Configure JWT validation options
                     var jwtOptions = new JWTOptions();
                     jwtOptions.setIssuer(issuer);
 
+                    // extract JWKS from keys array
                     var jwks = ((List<Object>) keys.getList()).stream()
                             .map(o -> new JsonObject((Map<String, Object>) o))
                             .collect(Collectors.toList());
 
+                    // configure JWTAuth
                     var jwtAuthOptions = new JWTAuthOptions();
                     jwtAuthOptions.setJwks(jwks);
                     jwtAuthOptions.setJWTOptions(jwtOptions);
                     jwtAuthOptions.setPermissionsClaimKey(jwtConfig.getString("permissionClaimsKey", "realm_access/roles"));
 
-                    promise.complete(JWTAuth.create(vertx, jwtAuthOptions));
+                    JWTAuth jwtAuth = JWTAuth.create(vertx, jwtAuthOptions);
+                    promise.complete(jwtAuth);
                 });
 
         return promise.future().compose(auth -> {
