@@ -62,32 +62,26 @@ public class MainVerticle extends AbstractVerticle {
                 .setHandler(bootstrap);
     }
 
-    Future<Void> startServer(Startup startup) {
+    private Future<Startup> initConfig(Promise<Void> bootstrap) {
 
-        var httpConfig = startup.config.getJsonObject("http");
+        // load configuration from config.yaml file
+        var yamlConfigOpts = new ConfigStoreOptions() //
+                .setFormat("yaml") //
+                .setType("file") //
+                .setConfig(new JsonObject().put("path", "config.yaml"));
 
-        var port = httpConfig.getInteger("port", 3000);
-        vertx.createHttpServer().requestHandler(router).listen(port);
+        var configRetrieverOpts = new ConfigRetrieverOptions() //
+                .addStore(yamlConfigOpts);
 
-        LOG.info("Vertx JWT-Service started!");
+        var configRetriever = ConfigRetriever.create(vertx, configRetrieverOpts);
 
-        return Promise.<Void>succeededPromise().future();
+        return Future.future(configRetriever::getConfig)
+                .map(config -> new Startup(bootstrap, config));
     }
 
-    Future<Startup> setupRoutes(Startup startup) {
+    private Future<Startup> setupWebClient(Startup startup) {
 
-        router.get("/api/greet").handler(this::handleGreet);
-        router.get("/api/user").handler(this::handleUserData);
-        router.get("/api/admin").handler(this::handleAdminData);
-
-        return Promise.succeededPromise(startup).future();
-    }
-
-    Future<Startup> setupRouter(Startup startup) {
-
-        router = Router.router(vertx);
-
-        router.route("/api/*").handler(JWTAuthHandler.create(jwtAuth));
+        webClient = WebClient.create(vertx);
 
         return Promise.succeededPromise(startup).future();
     }
@@ -138,27 +132,34 @@ public class MainVerticle extends AbstractVerticle {
         });
     }
 
-    Future<Startup> setupWebClient(Startup startup) {
+    private Future<Startup> setupRouter(Startup startup) {
 
-        webClient = WebClient.create(vertx);
+        router = Router.router(vertx);
+
+        router.route("/api/*").handler(JWTAuthHandler.create(jwtAuth));
 
         return Promise.succeededPromise(startup).future();
     }
 
-    Future<Startup> initConfig(Promise<Void> bootstrap) {
+    private Future<Startup> setupRoutes(Startup startup) {
 
-        var yamlConfigOpts = new ConfigStoreOptions() //
-                .setFormat("yaml") //
-                .setType("file") //
-                .setConfig(new JsonObject().put("path", "config.yaml"));
+        router.get("/api/greet").handler(this::handleGreet);
+        router.get("/api/user").handler(this::handleUserData);
+        router.get("/api/admin").handler(this::handleAdminData);
 
-        var configRetrieverOpts = new ConfigRetrieverOptions() //
-                .addStore(yamlConfigOpts);
+        return Promise.succeededPromise(startup).future();
+    }
 
-        var configRetriever = ConfigRetriever.create(vertx, configRetrieverOpts);
+    private Future<Void> startServer(Startup startup) {
 
-        return Future.future(configRetriever::getConfig)
-                .map(config -> new Startup(bootstrap, config));
+        var httpConfig = startup.config.getJsonObject("http");
+
+        var port = httpConfig.getInteger("port", 3000);
+        vertx.createHttpServer().requestHandler(router).listen(port);
+
+        LOG.info("Vertx JWT-Service started!");
+
+        return Promise.<Void>succeededPromise().future();
     }
 
     private void handleGreet(RoutingContext ctx) {
@@ -170,7 +171,7 @@ public class MainVerticle extends AbstractVerticle {
         var accessToken = ctx.request().getHeader(HttpHeaders.AUTHORIZATION).substring("Bearer ".length());
         // Use accessToken for down-stream calls...
 
-        ctx.request().response().end(String.format("Hi %s (%s) %s", username, userId, Instant.now()));
+        ctx.request().response().end(String.format("Hi %s (%s) %s%n", username, userId, Instant.now()));
     }
 
     private void handleUserData(RoutingContext ctx) {
@@ -186,7 +187,13 @@ public class MainVerticle extends AbstractVerticle {
                 return;
             }
 
-            toJsonResponse(ctx).end(String.format("{data: \"User data %s (%s) %s\"}", username, userId, Instant.now()));
+            JsonObject data = new JsonObject()
+                    .put("type", "user")
+                    .put("username", username)
+                    .put("userId", userId)
+                    .put("timestamp", Instant.now());
+
+            toJsonResponse(ctx).end(data.toString());
         });
     }
 
@@ -203,7 +210,13 @@ public class MainVerticle extends AbstractVerticle {
                 return;
             }
 
-            toJsonResponse(ctx).end(String.format("{data: \"Admin data %s (%s) %s\"}", username, userId, Instant.now()));
+            JsonObject data = new JsonObject()
+                    .put("type", "admin")
+                    .put("username", username)
+                    .put("userId", userId)
+                    .put("timestamp", Instant.now());
+
+            toJsonResponse(ctx).end(data.toString());
         });
     }
 

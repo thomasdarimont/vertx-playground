@@ -38,7 +38,7 @@ docker run \
   -v $PWD/vertx-realm.json:/tmp/vertx-realm.json \
   -v $PWD/data:/opt/jboss/keycloak/standalone/data \
   -p 8080:8080 \
-  quay.io/keycloak/keycloak:9.0.2
+  quay.io/keycloak/keycloak:11.0.2
 ```
 
 Keycloak contains the following predefined users:  
@@ -88,11 +88,11 @@ echo $KC_ACCESS_TOKEN
 ## Call service endpoints as user `tester`
 
 ```
-curl -v -H "Authorization: Bearer $KC_ACCESS_TOKEN" http://localhost:3000/api/greet
+curl --silent -H "Authorization: Bearer $KC_ACCESS_TOKEN" http://localhost:3000/api/greet
 
-curl -v -H "Authorization: Bearer $KC_ACCESS_TOKEN" http://localhost:3000/api/user
+curl --silent -H "Authorization: Bearer $KC_ACCESS_TOKEN" http://localhost:3000/api/user
 
-curl -v -H "Authorization: Bearer $KC_ACCESS_TOKEN" http://localhost:3000/api/admin
+curl --silent -H "Authorization: Bearer $KC_ACCESS_TOKEN" http://localhost:3000/api/admin
 ```
 
 ## Obtain access token from Keycloak for user `vadmin`
