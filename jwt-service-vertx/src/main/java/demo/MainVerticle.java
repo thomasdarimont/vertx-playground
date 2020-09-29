@@ -59,7 +59,7 @@ public class MainVerticle extends AbstractVerticle {
                 .compose(this::setupRouter)
                 .compose(this::setupRoutes)
                 .compose(this::startServer)
-                .setHandler(bootstrap);
+                .onComplete(bootstrap);
     }
 
     private Future<Startup> initConfig(Promise<Void> bootstrap) {
@@ -83,7 +83,7 @@ public class MainVerticle extends AbstractVerticle {
 
         webClient = WebClient.create(vertx);
 
-        return Promise.succeededPromise(startup).future();
+        return Future.succeededFuture(startup);
     }
 
     private Future<Startup> setupJwtAuth(Startup startup) {
@@ -134,7 +134,7 @@ public class MainVerticle extends AbstractVerticle {
 
         return promise.future().compose(auth -> {
             jwtAuth = auth;
-            return Promise.succeededPromise(startup).future();
+            return Future.succeededFuture(startup);
         });
     }
 
@@ -144,7 +144,7 @@ public class MainVerticle extends AbstractVerticle {
 
         router.route("/api/*").handler(JWTAuthHandler.create(jwtAuth));
 
-        return Promise.succeededPromise(startup).future();
+        return Future.succeededFuture(startup);
     }
 
     private Future<Startup> setupRoutes(Startup startup) {
@@ -153,7 +153,7 @@ public class MainVerticle extends AbstractVerticle {
         router.get("/api/user").handler(this::handleUserData);
         router.get("/api/admin").handler(this::handleAdminData);
 
-        return Promise.succeededPromise(startup).future();
+        return Future.succeededFuture(startup);
     }
 
     private Future<Void> startServer(Startup startup) {
@@ -165,7 +165,7 @@ public class MainVerticle extends AbstractVerticle {
 
         LOG.info("Vertx JWT-Service started!");
 
-        return Promise.<Void>succeededPromise().future();
+        return Future.succeededFuture();
     }
 
     private void handleGreet(RoutingContext ctx) {

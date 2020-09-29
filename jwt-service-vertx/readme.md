@@ -89,10 +89,16 @@ echo $KC_ACCESS_TOKEN
 
 ```
 curl --silent -H "Authorization: Bearer $KC_ACCESS_TOKEN" http://localhost:3000/api/greet
+# should return
+Hi tester (27b3fac0-9aec-4421-81cf-d4b02428f901) 2020-09-29T14:40:22.569268100Z
 
 curl --silent -H "Authorization: Bearer $KC_ACCESS_TOKEN" http://localhost:3000/api/user
+# should return
+# "type":"user","username":"tester","userId":"27b3fac0-9aec-4421-81cf-d4b02428f901","timestamp":"2020-09-29T14:40:28.499375100Z"}
 
 curl --silent -H "Authorization: Bearer $KC_ACCESS_TOKEN" http://localhost:3000/api/admin
+# should return
+# {"error": "forbidden"}
 ```
 
 ## Obtain access token from Keycloak for user `vadmin`
