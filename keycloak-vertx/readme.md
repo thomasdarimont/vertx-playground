@@ -1,13 +1,15 @@
 Demo for Keycloak Vertx Integration
 ---
 
-PoC for securing a Vertx App with Keycloak via OpenID Connect with Authorization Code Grant Flow 
+Example for securing a Vertx App with Keycloak via OpenID Connect with Authorization Code Grant Flow 
 with configuration via OpenID Connect Discovery Endpoint.  
 
 An example realm `vertx` with a `demo-client` configuration can be found in the `vertx-realm.json`.
 In my demo I created a user `tester` with password `test` and an admin user `vadmin` also with password `test`.  
 
-Note: This example assumes Keycloak to be accessible via `http://localhost:8080/auth`.
+Note: This example assumes Keycloak is accessible at `http://localhost:8080/auth`.
+
+This example was tested with Vertx 3.9.3 and Keycloak 11.0.2.
 
 # Features
 The following features are demonstrated:  
@@ -31,7 +33,7 @@ docker run \
   -v $PWD/vertx-realm.json:/tmp/vertx-realm.json \
   -v $PWD/data:/opt/jboss/keycloak/standalone/data \
   -p 8080:8080 \
-  quay.io/keycloak/keycloak:9.0.2
+  quay.io/keycloak/keycloak:11.0.2
 ```
 
 Keycloak contains the following predefined users:  

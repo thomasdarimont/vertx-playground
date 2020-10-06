@@ -15,7 +15,7 @@ public class MainVerticle extends AbstractVerticle {
         r.get("/api/v1/hello").handler(this::onHello);
         r.get("/api/v1/hello/:name").handler(this::onHelloName);
 
-        getVertx().createHttpServer().requestHandler(r).listen(8080);
+        getVertx().createHttpServer().requestHandler(r).listen(7000);
     }
 
     private void onHelloName(RoutingContext ctx) {
